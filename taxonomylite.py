@@ -1,7 +1,6 @@
 '''
 A simple one-file solution for those times when you want to check if one organism is
-a descended from another, but don't need a full phylogenetic tree manipulation library
-like DendroPy, PyCogent, or ETE.
+a descended from another, but don't need a full phylogenetic tree manipulation library.
 
 The library is just a single file that depends only upon the standard library.
 You can easily embed it in another library by copying this script.
@@ -178,6 +177,14 @@ class Taxonomy(object):
             result = result[0]
         return result
 
+    def tid_to_rank(self, tid):
+        tid = (tid,)
+        result = self.execute(
+            "SELECT rank FROM taxonomy WHERE taxa_id = ?", tid).fetchone()
+        if result is not None:
+            result = result[0]
+        return result
+
     def is_parent(self, child_tid, parent_tid):
         """Test if `parent_tid` is a parent taxa of `child_tid`
 
@@ -302,21 +309,25 @@ class Taxonomy(object):
         -------
         list of ints
         """
+        root = self.parent(tid)
+        for i in range(degree):
+            root = self.parent(root)
+
         relatives = []
-        parent = self.parent(tid)
-        relatives.append(parent)
-        children = self.children(tid)
-        relatives.extend(children)
-        next_taxon = tid
-        for i in range(degree-1):
-            siblings = self.siblings(next_taxon)
-            children_next_taxon = []
-            for item in children:
-                grandchildren = self.children(item)
-                children_next_taxon = children_next_taxon + grandchildren
-            children = children_next_taxon + siblings
-            relatives = relatives + children
-            next_taxon = parent
-            parent = self.parent(parent)
-            relatives.append(parent)
+        current_layer = [root]
+        next_layer = []
+        for i in range(degree * 2):
+            for entry in current_layer:
+                next_layer.extend(row for row in self.children(entry))
+            relatives.extend(current_layer)
+            current_layer = next_layer
+            next_layer = []
         return relatives
+
+    def nearest_common_ancestor(self, a, b):
+        alineage = self.lineage(a)
+        blineage = self.lineage(b)
+        for i, tida in enumerate(alineage[::-1]):
+            for j, tidb in enumerate(blineage[::-1]):
+                if tida == tidb:
+                    return i + j, tida

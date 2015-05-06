@@ -22,7 +22,7 @@ def _strip_tab(name):
 #: The default location to download taxonomy information from
 SOURCE_URL = "ftp://ftp.ncbi.nih.gov/pub/taxonomy/taxdump.tar.gz"
 #: The separator used to tokenize the in-database lineage string
-SEP_TOKEN = "!!"
+SEP_TOKEN = "zzz"
 
 
 def _from_ftp(url=SOURCE_URL):
@@ -212,7 +212,7 @@ class Taxonomy(object):
         -------
         bool
         """
-        parent_tid = "%!" + str(parent_tid) + "!%"
+        parent_tid = "%{}{}{}%".format(self.sep, parent_tid, self.sep)
         child_tid = child_tid
         try:
             self.execute('''SELECT taxa_id FROM taxonomy WHERE taxa_id = ?
@@ -273,9 +273,11 @@ class Taxonomy(object):
         tid = (tid,)
         children = []
         if deep:
-            tid = ("%!" + str(tid[0]) + "!%",)
-            for row in self.execute("SELECT taxa_id FROM taxonomy WHERE lineage LIKE ?", tid):
-                children.append(row[0])
+            tid = tid[0]
+            tid_str = ("%{}{}{}%".format(self.sep, tid, self.sep),)
+            for row in self.execute("SELECT taxa_id FROM taxonomy WHERE lineage LIKE ?", tid_str):
+                if row[0] != tid:
+                    children.append(row[0])
         else:
             for row in self.execute("SELECT taxa_id FROM taxonomy WHERE parent_taxa = ?", tid):
                 children.append(row[0])

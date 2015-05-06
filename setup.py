@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='taxonomylite',
-    version='1.0.2',
+    version='1.0.3',
     py_modules=["taxonomylite"],
     description="Traverse NCBI Taxonomy data using SQLite",
     long_description='''

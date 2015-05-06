@@ -8,7 +8,10 @@ You can easily embed it in another library by copying this script.
 
 import sqlite3
 import tarfile
-
+import os
+import re
+import shutil
+from tempfile import mkdtemp
 from os import remove
 from urllib2 import urlopen
 
@@ -23,26 +26,32 @@ SEP_TOKEN = "!!"
 
 
 def _from_ftp(url=SOURCE_URL):
-    if url is not None:
-        with open("taxdump.tar.gz", 'wb') as outhandle:
-            outhandle.writelines(urlopen(url))
-    with tarfile.open("taxdump.tar.gz", 'r:gz') as tarchive:
-        tarchive.extract("names.dmp")
-        tax2name = {}
+    try:
+        tempdir = mkdtemp()
+        if url is not None:
+            with open(os.path.join(tempdir, "taxdump.tar.gz"), 'wb') as outhandle:
+                outhandle.writelines(urlopen(url))
+        archive_path = os.path.join(tempdir, "taxdump.tar.gz")
+        with tarfile.open(archive_path, 'r:gz') as tarchive:
+            tarchive.extract("names.dmp", tempdir)
+            tax2name = {}
 
-        for line in open("names.dmp"):
-            tax_id, name, unique_name, name_class, _ = map(_strip_tab, line.split("|"))
-            if name_class == "scientific name":
-                tax2name[tax_id] = unique_name if name == "" else name
-        remove("names.dmp")
-        tarchive.extract("nodes.dmp")
+            for line in open(os.path.join(tempdir, "names.dmp")):
+                tax_id, name, unique_name, name_class, _ = map(_strip_tab, line.split("|"))
+                if name_class == "scientific name":
+                    tax2name[tax_id] = unique_name if name == "" else name
+            remove(os.path.join(tempdir, "names.dmp"))
+            tarchive.extract("nodes.dmp", tempdir)
 
-        for line in open("nodes.dmp"):
-            parts = map(_strip_tab, line.split("|"))
-            tax_id, parent_tax_id, rank = parts[:3]
-            name = tax2name[tax_id]
-            yield tax_id, name, parent_tax_id, rank
-        remove("nodes.dmp")
+            for line in open(os.path.join(tempdir, "nodes.dmp")):
+                parts = map(_strip_tab, line.split("|"))
+                tax_id, parent_tax_id, rank = parts[:3]
+                name = tax2name[tax_id]
+                yield tax_id, name, parent_tax_id, rank
+            remove(os.path.join(tempdir, "nodes.dmp"))
+        remove(archive_path)
+    finally:
+        shutil.rmtree(tempdir)
 
 
 class Taxonomy(object):
@@ -92,6 +101,11 @@ class Taxonomy(object):
     def __init__(self, store_path):
         self.store_path = store_path
         self.connection = sqlite3.connect(store_path)
+        try:
+            base_lineage = self.execute("SELECT lineage FROM taxonomy where taxa_id = 1;").next()
+            self.sep = re.split(r'\d', base_lineage)[0]
+        except:
+            self.sep = 'zzz'
 
     def _init_schema(self):
         self.execute('DROP TABLE IF EXISTS taxonomy')
@@ -105,13 +119,14 @@ class Taxonomy(object):
     def _init_index(self):
         self.execute('''CREATE INDEX IF NOT EXISTS taxname ON taxonomy(taxa_name);''')
         self.execute('''CREATE INDEX IF NOT EXISTS parent_id ON taxonomy(parent_taxa);''')
+        self.execute('''CREATE INDEX IF NOT EXISTS lineage ON taxonomy(lineage);''')
         self.commit()
 
     def _construct_lineage(self):
         tax2lineage = {}
         for row in self.execute("SELECT * FROM taxonomy"):
             lineage = self.lineage(row[0])
-            tax2lineage[row[0]] = SEP_TOKEN + SEP_TOKEN.join(map(str, lineage)) + SEP_TOKEN
+            tax2lineage[row[0]] = self.sep + self.sep.join(map(str, lineage)) + self.sep
 
         self.executemany("UPDATE taxonomy SET lineage = ?2 WHERE taxa_id = ?1;", tax2lineage.iteritems())
 

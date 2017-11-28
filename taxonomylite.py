@@ -222,20 +222,6 @@ class Taxonomy(object):
         except StopIteration:
             return False
 
-    def is_child(self, child_tid, parent_tid):
-        """Test if `child_tid` is a child taxa of `parent_tid`
-
-        Parameters
-        ----------
-        child_tid: int
-        parent_tid: int
-
-        Returns
-        -------
-        bool
-        """
-        return self.is_parent(parent_tid, parent_tid)
-
     def lineage(db, tid):
         """Construct the taxonomic "path" from `tid` to the root of the
         phylogenetic hierarchy
